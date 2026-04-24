@@ -1,0 +1,14 @@
+# Python
+__pycache__/
+*.pyc
+
+# Virtual env
+venv/
+
+# Temp files
+temp/
+*.xlsx
+*.txt
+
+# OS
+.DS_Store
