@@ -1,4 +1,10 @@
-streamlit
-requests
+fastapi
+uvicorn[standard]
 pandas
 openpyxl
+python-multipart
+streamlit
+requests
+numpy
+xlsxwriter
+python-dateutil
