@@ -5,7 +5,7 @@ import pandas as pd
 # =========================
 # CONFIG
 # =========================
-API_URL = "https://web-production-285a2.up.railway.app/"
+API_URL = "https://web-production-285a2.up.railway.app"
 
 st.set_page_config(
     page_title="ETL Finance",
