@@ -3,12 +3,21 @@ __pycache__/
 *.pyc
 
 # Virtual env
-venv/
+.venv/
+
+# Environment
+.env
 
 # Temp files
 temp/
-*.xlsx
-*.txt
+
+# Database
+*.db
+
+# Excel outputs
+*_importacao.xlsx
+*_rejeitados.xlsx
 
 # OS
 .DS_Store
+Thumbs.db
