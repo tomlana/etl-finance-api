@@ -3,6 +3,7 @@ from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 import shutil
+import pandas as pd
 import os
 import uuid
 
@@ -44,6 +45,7 @@ def root():
 async def preview_file(input_file: UploadFile = File(...)):
 
     try:
+
         run_id = str(uuid.uuid4())
 
         input_path = os.path.join(
@@ -57,20 +59,47 @@ async def preview_file(input_file: UploadFile = File(...)):
         df = load_file(input_path)
 
         df = df.dropna(how="all")
-        df.columns = [str(c).strip() for c in df.columns]
+
+        df.columns = [
+            str(c).strip()
+            for c in df.columns
+        ]
 
         detection = detect_columns(df)
 
+        detection = {
+            k: ("" if pd.isna(v) else str(v))
+            for k, v in detection.items()
+        }
+
         return {
             "status": "success",
+
             "run_id": run_id,
-            "columns_detected": df.columns.tolist(),
-            "sample_data": df.head(5).to_dict(orient="records"),
+
+            "columns_detected":
+                [str(c) for c in df.columns.tolist()],
+
+            "sample_data":
+                (
+                    df.head(5)
+                    .fillna("")
+                    .replace(
+                        [float("inf"), float("-inf")],
+                        ""
+                    )
+                    .to_dict(orient="records")
+                ),
+
             "auto_mapping": detection
         }
 
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+
+        raise HTTPException(
+            status_code=400,
+            detail=str(e)
+        )
 
 # =========================
 # PROCESS

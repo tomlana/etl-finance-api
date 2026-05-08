@@ -1,168 +1,269 @@
-# =========================
-# STREAMLIT FRONTEND (ADD ERROR TABLE PREVIEW)
-# =========================
-
 import streamlit as st
 import requests
-import time
 import pandas as pd
 
+# =========================
+# CONFIG
+# =========================
 API_URL = "http://127.0.0.1:8000"
 
-st.set_page_config(page_title="ETL", layout="wide", page_icon="⚡")
+st.set_page_config(
+    page_title="ETL Finance",
+    page_icon="💰",
+    layout="wide"
+)
 
 # =========================
-# SIDEBAR AUTH
+# CUSTOM CSS
 # =========================
-st.sidebar.title("🔐ETL")
+st.markdown("""
+<style>
 
-api_key = st.sidebar.text_input("API Key", type="password")
+.main {
+    background-color: #0f1117;
+    color: white;
+}
 
-if not api_key:
-    st.warning("Enter your API key to continue")
-    st.stop()
+.stButton>button {
+    width: 100%;
+    border-radius: 10px;
+    height: 45px;
+    background-color: #4f46e5;
+    color: white;
+    border: none;
+    font-weight: bold;
+}
 
-headers = {"x-api-key": api_key}
+.stDownloadButton>button {
+    width: 100%;
+    border-radius: 10px;
+    height: 45px;
+    background-color: #16a34a;
+    color: white;
+    border: none;
+    font-weight: bold;
+}
+
+.block-container {
+    padding-top: 2rem;
+}
+
+.card {
+    background-color: #1c1f26;
+    padding: 20px;
+    border-radius: 16px;
+    margin-bottom: 20px;
+    border: 1px solid #2d3748;
+}
+
+.metric {
+    text-align: center;
+    padding: 20px;
+    border-radius: 12px;
+    background: #151821;
+}
+
+.small-text {
+    color: #9ca3af;
+    font-size: 14px;
+}
+
+</style>
+""", unsafe_allow_html=True)
 
 # =========================
 # HEADER
 # =========================
-st.title("⚡ Data Processor")
-st.caption("Automated Financial Data Transformation Platform")
+st.title("💰 ETL Finance Platform")
+st.caption("Upload financeiro inteligente com auto-detecção e validação")
 
-tab1, tab2 = st.tabs(["🔍 Preview", "⚙️ Process"])
+# =========================
+# UPLOAD SECTION
+# =========================
+st.markdown("## 📤 Upload de Arquivos")
+
+col1, col2 = st.columns(2)
+
+with col1:
+    input_file = st.file_uploader(
+        "Arquivo Financeiro",
+        type=["csv", "xlsx"]
+    )
+
+with col2:
+    fornecedores_file = st.file_uploader(
+        "Tabela de Fornecedores",
+        type=["xlsx", "csv"]
+    )
 
 # =========================
 # PREVIEW
 # =========================
-with tab1:
-    st.subheader("Preview Input File")
+if input_file:
 
-    input_file = st.file_uploader("Upload CSV or Excel", type=["csv", "xlsx"], key="preview")
+    st.markdown("---")
+    st.markdown("## 👀 Preview Inteligente")
 
-    if st.button("Run Preview"):
-        if not input_file:
-            st.warning("Please upload a file first")
-        else:
+    if st.button("Gerar Preview"):
+
+        with st.spinner("Analisando arquivo..."):
+
             files = {
-                "input_file": (input_file.name, input_file.getvalue())
+                "input_file": (
+                    input_file.name,
+                    input_file,
+                    input_file.type
+                )
             }
 
-            with st.spinner("Analyzing file..."):
-                res = requests.post(f"{API_URL}/preview", files=files, headers=headers)
+            try:
+                res = requests.post(
+                    f"{API_URL}/preview",
+                    files=files
+                )
 
-            if res.status_code == 200:
                 data = res.json()
 
                 if data["status"] == "success":
-                    st.success("Preview completed")
 
-                    st.write("### Columns Detected")
-                    st.write(data.get("columns_detected", []))
+                    st.success("Preview gerado com sucesso")
 
-                    st.write("### Auto Mapping")
-                    st.json(data.get("auto_mapping", {}))
+                    # Columns
+                    st.markdown("### 🧠 Colunas Detectadas")
 
-                    st.write("### Sample Data")
-                    st.dataframe(pd.DataFrame(data.get("sample_data", [])), use_container_width=True)
+                    st.json(data["auto_mapping"])
+
+                    # Sample
+                    st.markdown("### 📄 Amostra dos Dados")
+
+                    sample_df = pd.DataFrame(data["sample_data"])
+
+                    st.dataframe(
+                        sample_df,
+                        use_container_width=True
+                    )
 
                 else:
-                    st.error(data.get("message", "Unknown error"))
-            else:
-                st.error(res.text)
+                    st.error(data)
 
+            except Exception as e:
+                st.error(str(e))
 
 # =========================
-# PROCESS + ERROR TABLE
+# PROCESS
 # =========================
-with tab2:
-    st.subheader("Process Data")
+st.markdown("---")
+st.markdown("## ⚙️ Processamento")
 
-    col1, col2 = st.columns(2)
+if st.button("🚀 Processar Arquivos"):
 
-    with col1:
-        input_file_proc = st.file_uploader("Input File", type=["csv", "xlsx"], key="process_input")
+    if not input_file or not fornecedores_file:
+        st.warning("Envie os dois arquivos.")
+    else:
 
-    with col2:
-        forn_file = st.file_uploader("Fornecedores File", type=["xlsx"], key="forn")
+        with st.spinner("Processando ETL..."):
 
-    if st.button("Run Processing"):
-
-        if not input_file_proc or not forn_file:
-            st.warning("Upload both files before processing")
-
-        else:
             files = {
-                "input_file": (input_file_proc.name, input_file_proc.getvalue()),
-                "fornecedores_file": (forn_file.name, forn_file.getvalue())
+                "input_file": (
+                    input_file.name,
+                    input_file,
+                    input_file.type
+                ),
+                "fornecedores_file": (
+                    fornecedores_file.name,
+                    fornecedores_file,
+                    fornecedores_file.type
+                )
             }
 
-            progress = st.progress(0)
-            for i in range(100):
-                time.sleep(0.005)
-                progress.progress(i + 1)
+            try:
 
-            res = requests.post(f"{API_URL}/process", files=files, headers=headers)
+                res = requests.post(
+                    f"{API_URL}/process",
+                    files=files
+                )
 
-            if res.status_code == 200:
                 data = res.json()
 
                 if data["status"] == "success":
-                    st.success("Processing completed")
 
-                    st.write("### Summary")
-                    st.write(data["summary"])
-
-                    import_url = API_URL + data["files"]["importacao"]
-                    reject_url = API_URL + data["files"]["rejeitados"]
+                    st.success("ETL processado com sucesso")
 
                     # =========================
-                    # DOWNLOAD FILES
+                    # METRICS
                     # =========================
-                    import_file = requests.get(import_url, headers=headers)
-                    reject_file = requests.get(reject_url, headers=headers)
+                    st.markdown("## 📊 Resumo")
 
-                    st.download_button(
-                        "⬇ Download Importação",
-                        import_file.content,
-                        file_name="importacao.xlsx"
+                    c1, c2, c3 = st.columns(3)
+
+                    with c1:
+                        st.metric(
+                            "Total",
+                            data["summary"]["total"]
+                        )
+
+                    with c2:
+                        st.metric(
+                            "Válidos",
+                            data["summary"]["valid"]
+                        )
+
+                    with c3:
+                        st.metric(
+                            "Rejeitados",
+                            data["summary"]["rejected"]
+                        )
+
+                    # =========================
+                    # DOWNLOADS
+                    # =========================
+                    st.markdown("---")
+                    st.markdown("## ⬇️ Downloads")
+
+                    importacao_url = (
+                        API_URL
+                        + data["files"]["importacao"]
                     )
 
-                    st.download_button(
-                        "⬇ Download Rejeitados",
-                        reject_file.content,
-                        file_name="rejeitados.xlsx"
+                    rejeitados_url = (
+                        API_URL
+                        + data["files"]["rejeitados"]
                     )
 
-                    # =========================
-                    # ERROR TABLE PREVIEW
-                    # =========================
-                    st.write("### ❌ Rejected Rows Preview")
+                    d1, d2 = st.columns(2)
 
-                    try:
-                        df_rej = pd.read_excel(pd.io.common.BytesIO(reject_file.content))
+                    # VALID FILE
+                    with d1:
 
-                        if df_rej.empty:
-                            st.success("No rejected rows 🎉")
-                        else:
-                            st.dataframe(df_rej, use_container_width=True)
+                        file_res = requests.get(importacao_url)
 
-                            # Error summary
-                            if "erro" in df_rej.columns:
-                                st.write("### 📊 Error Breakdown")
-                                error_counts = df_rej["erro"].value_counts()
-                                st.bar_chart(error_counts)
+                        st.download_button(
+                            label="📥 Download Importação",
+                            data=file_res.content,
+                            file_name="importacao.xlsx",
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                        )
 
-                    except Exception as e:
-                        st.warning("Could not preview rejected file")
+                    # REJECTED FILE
+                    with d2:
+
+                        rej_res = requests.get(rejeitados_url)
+
+                        st.download_button(
+                            label="📥 Download Rejeitados",
+                            data=rej_res.content,
+                            file_name="rejeitados.xlsx",
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                        )
 
                 else:
-                    st.error(data.get("message", "Processing error"))
+                    st.error(data)
 
-            else:
-                st.error(res.text)
-try:
-    res = requests.post(f"{API_URL}/process", files=files, headers=headers)
-except requests.exceptions.ConnectionError:
-    st.error("🚨 Cannot connect to API. Is FastAPI running?")
-    st.stop()
+            except Exception as e:
+                st.error(str(e))
+
+# =========================
+# FOOTER
+# =========================
+st.markdown("---")
+st.caption("ETL Finance • Intelligent Financial Processing")
