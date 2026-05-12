@@ -61,9 +61,9 @@ def clean_money(value):
     if pd.isna(value):
         return None
 
-    value = str(value)
+    value = str(value).strip()
 
-    if value.strip() == "":
+    if value == "":
         return None
 
     value = (
@@ -97,10 +97,143 @@ def clean_money(value):
 
     value = re.sub(r"[^0-9\.-]", "", value)
 
+    if value in ["", ".", "-", "-."]:
+        return None
+
     try:
         return float(value)
     except:
         return None
+
+
+# =====================================================
+# CLEAN DATE
+# =====================================================
+def clean_date(value):
+
+    if pd.isna(value):
+        return pd.NaT
+
+    # =============================================
+    # ALREADY DATETIME
+    # =============================================
+    if isinstance(value, pd.Timestamp):
+
+        if 2000 <= value.year <= 2100:
+            return value
+
+        return pd.NaT
+
+    # =============================================
+    # STRING CLEAN
+    # =============================================
+    value_str = str(value).strip()
+
+    if value_str == "":
+        return pd.NaT
+
+    # =============================================
+    # REMOVE TIME PART
+    # =============================================
+    value_str = value_str.split(" ")[0]
+
+    # =============================================
+    # REMOVE .0 FROM EXCEL FLOATS
+    # EX:
+    # 45628.0
+    # =============================================
+    if value_str.endswith(".0"):
+        value_str = value_str[:-2]
+
+    # =============================================
+    # EXCEL SERIAL AS STRING
+    # =============================================
+    if re.match(r"^\d+$", value_str):
+
+        try:
+
+            serial = int(value_str)
+
+            # =====================================
+            # VALID EXCEL DATE RANGE
+            # =====================================
+            if 25000 <= serial <= 60000:
+
+                parsed = (
+                    pd.to_datetime("1899-12-30") +
+                    pd.to_timedelta(serial, unit="D")
+                )
+
+                if 2000 <= parsed.year <= 2100:
+                    return parsed
+
+        except:
+            pass
+
+    # =============================================
+    # FLOAT / INTEGER
+    # =============================================
+    if isinstance(value, (int, float)):
+
+        try:
+
+            numeric = float(value)
+
+            if 25000 <= numeric <= 60000:
+
+                parsed = (
+                    pd.to_datetime("1899-12-30") +
+                    pd.to_timedelta(numeric, unit="D")
+                )
+
+                if 2000 <= parsed.year <= 2100:
+                    return parsed
+
+        except:
+            pass
+
+    # =============================================
+    # VALID STRING PATTERNS
+    # =============================================
+    patterns = [
+        r"^\d{2}/\d{2}/\d{4}$",
+        r"^\d{2}-\d{2}-\d{4}$",
+        r"^\d{4}-\d{2}-\d{2}$"
+    ]
+
+    valid = any(
+        re.match(p, value_str)
+        for p in patterns
+    )
+
+    if not valid:
+        return pd.NaT
+
+    # =============================================
+    # PARSE STRING DATE
+    # =============================================
+    try:
+
+        parsed = pd.to_datetime(
+            value_str,
+            dayfirst=True,
+            errors="coerce"
+        )
+
+        if pd.isna(parsed):
+            return pd.NaT
+
+        # =========================================
+        # BLOCK 1970 / INVALID YEARS
+        # =========================================
+        if parsed.year < 2000 or parsed.year > 2100:
+            return pd.NaT
+
+        return parsed
+
+    except:
+
+        return pd.NaT
 
 
 # =====================================================
@@ -148,7 +281,8 @@ def load_file(path):
                         "debito",
                         "cliente",
                         "documento",
-                        "historico"
+                        "historico",
+                        "saldo"
                     ]
 
                     hits = sum(
@@ -282,20 +416,10 @@ def detect_columns(df):
     if df is None or df.empty:
         return {}
 
-    original_columns = list(df.columns)
-
     normalized_columns = {}
 
-    for col in original_columns:
-
-        clean_col = clean_header(col)
-
-        normalized_columns[col] = clean_col
-
-    print("\n========== NORMALIZED COLUMNS ==========")
-
-    for k, v in normalized_columns.items():
-        print(f"{k} -> {v}")
+    for col in df.columns:
+        normalized_columns[col] = clean_header(col)
 
     mappings = {
 
@@ -307,28 +431,15 @@ def detect_columns(df):
             "movimentacao"
         ],
 
-        "valor": [
-            "valor",
-            "amount",
-            "value",
-            "price",
-            "entrada",
-            "saida",
-            "credito",
-            "debito",
-            "saldo anterior",
-            "saída",
-            "entrada",
-            "saldo atual"
-        ],
-
         "fornecedor": [
             "fornecedor",
             "cliente",
             "vendor",
             "supplier",
             "empresa",
-            "favorecido"
+            "favorecido",
+            "beneficiario",
+            "razao social"
         ],
 
         "historico": [
@@ -336,14 +447,15 @@ def detect_columns(df):
             "descricao",
             "description",
             "memo",
-            "observacao"
+            "observacao",
+            "tipo",
+            "movimento",
+            "transacao"
         ],
 
         "titulo/documento": [
             "titulo documento",
-            "título documento",
             "documento",
-            "document",
             "numero",
             "nf"
         ]
@@ -355,16 +467,16 @@ def detect_columns(df):
 
         found = None
 
-        # =============================================
-        # DIRECT MATCH
-        # =============================================
         for original_col, normalized_col in normalized_columns.items():
 
             for alias in aliases:
 
                 alias = clean_header(alias)
 
-                if normalized_col == alias:
+                if (
+                    normalized_col == alias
+                    or alias in normalized_col
+                ):
 
                     found = original_col
                     break
@@ -372,51 +484,7 @@ def detect_columns(df):
             if found:
                 break
 
-        # =============================================
-        # PARTIAL MATCH
-        # =============================================
-        if not found:
-
-            for original_col, normalized_col in normalized_columns.items():
-
-                for alias in aliases:
-
-                    alias = clean_header(alias)
-
-                    if (
-                        alias in normalized_col
-                        or normalized_col in alias
-                    ):
-
-                        found = original_col
-                        break
-
-                if found:
-                    break
-
         detected[standard_name] = found
-
-    # =================================================
-    # AUTO DETECT MONEY
-    # =================================================
-    if not detected["valor"]:
-
-        for original_col, normalized_col in normalized_columns.items():
-
-            if normalized_col in [
-                "entrada",
-                "saida",
-                "credito",
-                "debito"
-            ]:
-
-                detected["valor"] = original_col
-                break
-
-    print("\n========== DETECTED ==========")
-
-    for k, v in detected.items():
-        print(f"{k} -> {v}")
 
     return detected
 
@@ -483,6 +551,9 @@ def run_etl(input_path, forn_path, output_prefix="output"):
     # =================================================
     detection_report = detect_columns(df)
 
+    print("\n========== DETECTION ==========")
+    print(detection_report)
+
     # =================================================
     # RENAME
     # =================================================
@@ -496,7 +567,7 @@ def run_etl(input_path, forn_path, output_prefix="output"):
     df.rename(columns=rename_map, inplace=True)
 
     # =================================================
-    # FORCE CLEAN HEADERS
+    # CLEAN HEADERS
     # =================================================
     df.columns = [
         clean_header(c)
@@ -507,67 +578,159 @@ def run_etl(input_path, forn_path, output_prefix="output"):
     print(df.columns.tolist())
 
     # =================================================
+    # MONEY COLUMNS DETECTION
+    # =================================================
+    money_map = {
+        "entrada": [],
+        "saida": [],
+        "saldo_anterior": [],
+        "saldo_atual": [],
+        "valor_direto": []
+    }
+
+    for col in df.columns:
+
+        c = clean_header(col)
+
+        # =============================================
+        # ENTRADA
+        # =============================================
+        if any(x in c for x in [
+            "entrada",
+            "credito",
+            "crédito",
+            "recebimento",
+            "receita"
+        ]):
+            money_map["entrada"].append(col)
+
+        # =============================================
+        # SAIDA
+        # =============================================
+        if any(x in c for x in [
+            "saida",
+            "saída",
+            "debito",
+            "débito",
+            "pagamento",
+            "despesa"
+        ]):
+            money_map["saida"].append(col)
+
+        # =============================================
+        # SALDO ANTERIOR
+        # =============================================
+        if any(x in c for x in [
+            "saldo anterior",
+            "saldo inicial"
+        ]):
+            money_map["saldo_anterior"].append(col)
+
+        # =============================================
+        # SALDO ATUAL
+        # =============================================
+        if any(x in c for x in [
+            "saldo atual",
+            "saldo final"
+        ]):
+            money_map["saldo_atual"].append(col)
+
+        # =============================================
+        # VALOR DIRETO
+        # =============================================
+        if c in [
+            "valor",
+            "amount",
+            "value",
+            "valor total"
+        ]:
+            money_map["valor_direto"].append(col)
+
+    print("\n========== MONEY MAP ==========")
+    print(money_map)
+
+    # =================================================
     # GENERATE VALOR
     # =================================================
-    if "valor" not in df.columns:
+    df["valor"] = 0.0
 
-        entrada_col = None
-        saida_col = None
+    # =============================================
+    # DIRECT VALUE
+    # =============================================
+    if money_map["valor_direto"]:
 
-        for col in df.columns:
+        col = money_map["valor_direto"][0]
 
-            c = clean_header(col)
-
-            if c in ["entrada", "credito"]:
-                entrada_col = col
-
-            if c in ["saida", "debito"]:
-                saida_col = col
-
-        print("\n========== MONEY COLUMNS ==========")
-        print(f"ENTRADA: {entrada_col}")
-        print(f"SAIDA: {saida_col}")
-
-        entrada_vals = (
-            df[entrada_col].apply(clean_money)
-            if entrada_col
-            else pd.Series([0] * len(df))
+        df["valor"] = (
+            df[col]
+            .apply(clean_money)
+            .fillna(0)
         )
 
-        saida_vals = (
-            df[saida_col].apply(clean_money)
-            if saida_col
-            else pd.Series([0] * len(df))
-        )
+    else:
 
-        entrada_vals = entrada_vals.fillna(0)
-        saida_vals = saida_vals.fillna(0)
+        # =========================================
+        # SOMA ENTRADAS
+        # =========================================
+        for col in money_map["entrada"]:
 
-        df["valor"] = entrada_vals - saida_vals
+            vals = (
+                df[col]
+                .apply(clean_money)
+                .fillna(0)
+            )
+
+            df["valor"] += vals
+
+        # =========================================
+        # SUBTRAI SAIDAS
+        # =========================================
+        for col in money_map["saida"]:
+
+            vals = (
+                df[col]
+                .apply(clean_money)
+                .fillna(0)
+            )
+
+            df["valor"] -= vals
+
+        # =========================================
+        # BALANCE FALLBACK
+        # =========================================
+        if (
+            df["valor"]
+            .abs()
+            .sum() == 0
+            and money_map["saldo_anterior"]
+            and money_map["saldo_atual"]
+        ):
+
+            saldo_ant = (
+                df[
+                    money_map["saldo_anterior"][0]
+                ]
+                .apply(clean_money)
+                .fillna(0)
+            )
+
+            saldo_atual = (
+                df[
+                    money_map["saldo_atual"][0]
+                ]
+                .apply(clean_money)
+                .fillna(0)
+            )
+
+            df["valor"] = (
+                saldo_atual - saldo_ant
+            )
+
+    print("\n========== GENERATED VALOR ==========")
+    print(df["valor"].head())
 
     # =================================================
-    # REQUIRED
-    # =================================================
-    required = ["data", "valor"]
-
-    missing = []
-
-    for col in required:
-
-        if col not in df.columns:
-            missing.append(col)
-
-    if missing:
-
-        print("\n========== AVAILABLE COLUMNS ==========")
-        print(df.columns.tolist())
-
-        raise Exception(
-            f"Missing critical column: {', '.join(missing)}"
-        )
-
-    # =================================================
-    # OPTIONAL
+    # OPTIONAL FIELDS
     # =================================================
     optional = [
         "fornecedor",
@@ -583,30 +746,95 @@ def run_etl(input_path, forn_path, output_prefix="output"):
     # =================================================
     # CLEAN DATA
     # =================================================
-    df["valor"] = df["valor"].apply(clean_money)
+    df["valor"] = (
+        df["valor"]
+        .apply(clean_money)
+    )
 
-    df["data"] = pd.to_datetime(
-        df["data"],
-        errors="coerce",
-        dayfirst=True
+    df["data"] = (
+        df["data"]
+        .apply(clean_date)
     )
 
     df["fornecedor"] = (
         df["fornecedor"]
         .fillna("")
+        .astype(str)
         .apply(normalize_text)
     )
 
     df["historico"] = (
         df["historico"]
         .fillna("")
-        .apply(normalize_text)
+        .astype(str)
     )
 
     df["titulo/documento"] = (
         df["titulo/documento"]
         .fillna("")
         .astype(str)
+    )
+
+    # =================================================
+    # HISTORICO FIX
+    # =================================================
+    def build_historico(row):
+
+        historico = str(
+            row.get("historico", "")
+        ).strip()
+
+        fornecedor = str(
+            row.get("fornecedor", "")
+        ).strip()
+
+        documento = str(
+            row.get("titulo/documento", "")
+        ).strip()
+
+        valor = row.get("valor", 0)
+
+        invalid_hist = [
+            "",
+            "nan",
+            "none",
+            "recebimento",
+            "pagamento"
+        ]
+
+        parts = []
+
+        # =========================================
+        # PRIORITIZE REAL DESCRIPTION
+        # =========================================
+        if (
+            historico.lower()
+            not in invalid_hist
+        ):
+            parts.append(historico)
+
+        if fornecedor:
+
+            if fornecedor not in parts:
+                parts.append(fornecedor)
+
+        if documento:
+
+            parts.append(f"DOC {documento}")
+
+        if not parts:
+            parts.append("LANCAMENTO FINANCEIRO")
+
+        final_text = " | ".join(parts)
+
+        if valor < 0:
+            return f"PAGAMENTO - {final_text}"
+
+        return f"RECEBIMENTO - {final_text}"
+
+    df["historico_final"] = df.apply(
+        build_historico,
+        axis=1
     )
 
     print("\n========== CLEAN ==========")
@@ -719,7 +947,6 @@ def run_etl(input_path, forn_path, output_prefix="output"):
 
         receita["debito"] = 10001
         receita["credito"] = 20001
-        receita["historico_final"] = "RECEBIMENTO"
 
     # =================================================
     # DESPESA
@@ -739,8 +966,6 @@ def run_etl(input_path, forn_path, output_prefix="output"):
         )
 
         despesa["credito"] = 10001
-
-        despesa["historico_final"] = "PAGAMENTO"
 
     # =================================================
     # FINAL
